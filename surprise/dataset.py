@@ -103,6 +103,18 @@ class Dataset:
         return cls.load_from_file(file_path=dataset.path, reader=reader)
 
     @classmethod
+    def load_implicit_feedback_file(cls, file_path, reader):
+        """ Load a dataset from a (custom) file with implicit feedback.
+
+        The purpose of this method is to load a custom dataset for implicit feedback.
+        It was added with the purpose to use a different implicit feedback feature for SVD++.
+
+        """
+
+        return DatasetAutoFolds(ratings_file=file_path, reader=reader)
+
+
+    @classmethod
     def load_from_file(cls, file_path, reader):
         """Load a dataset from a (custom) file.
 
@@ -164,6 +176,15 @@ class Dataset:
 
         return DatasetAutoFolds(reader=reader, df=df)
 
+    def read_ratings_with_implicit(self, file_name):
+        """Return a list of ratings (user, item, rating, timestamp) read from
+        file_name"""
+
+        with open(os.path.expanduser(file_name)) as f:
+            raw_ratings = [self.reader.parse_line_with_implicit(line) for line in
+                           itertools.islice(f, self.reader.skip_lines, None)]
+        return raw_ratings
+
     def read_ratings(self, file_name):
         """Return a list of ratings (user, item, rating, timestamp) read from
         file_name"""
@@ -198,6 +219,7 @@ class Dataset:
 
         ur = defaultdict(list)
         ir = defaultdict(list)
+        mr = defaultdict(list)
 
         # user raw id, item raw id, translated rating, time stamp
         for urid, irid, r, timestamp in raw_trainset:
@@ -229,7 +251,8 @@ class Dataset:
                             self.reader.rating_scale,
                             self.reader.offset,
                             raw2inner_id_users,
-                            raw2inner_id_items)
+                            raw2inner_id_items,
+                            mr)
 
         return trainset
 
@@ -256,8 +279,8 @@ class DatasetUserFolds(Dataset):
 
     def raw_folds(self):
         for train_file, test_file in self.folds_files:
-            raw_train_ratings = self.read_ratings(train_file)
-            raw_test_ratings = self.read_ratings(test_file)
+            raw_train_ratings = self.read_ratings_with_implicit(train_file)
+            raw_test_ratings = self.read_ratings_with_implicit(test_file)
             yield raw_train_ratings, raw_test_ratings
 
 
@@ -273,7 +296,7 @@ class DatasetAutoFolds(Dataset):
 
         if ratings_file is not None:
             self.ratings_file = ratings_file
-            self.raw_ratings = self.read_ratings(self.ratings_file)
+            self.raw_ratings = self.read_ratings_with_implicit(self.ratings_file)
         elif df is not None:
             self.df = df
             self.raw_ratings = [(uid, iid, float(r) + self.reader.offset, None)

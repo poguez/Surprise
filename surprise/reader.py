@@ -60,12 +60,45 @@ class Reader():
             else:
                 self.with_timestamp = False
 
+            if 'implicit_feedback_2' in splitted_format:
+                self.with_implicit_feedback_2 = True
+                entities.append('implicit_feedback_2')
+            else:
+                self.with_implicit_feedback_2 = False
+
             # check that all fields are correct
             if any(field not in entities for field in splitted_format):
                 raise ValueError('line_format parameter is incorrect.')
 
             self.indexes = [splitted_format.index(entity) for entity in
                             entities]
+
+    def parse_line_with_implicit(self, line):
+        '''Parse a line.
+
+        Ratings are translated so that they are all strictly positive.
+
+        Args:
+            line(str): The line to parse
+
+        Returns:
+            tuple: User id, item id, rating and timestamp. The timestamp is set
+            to ``None`` if it does no exist.
+            '''
+
+        line = line.split(self.sep)
+        try:
+            if self.with_timestamp and self.with_implicit_feedback_2:
+                uid, iid, r, timestamp, implicit_feedback_2 = (line[i].strip()
+                                                               for i in self.indexes)
+            else:
+                raise ValueError('It does not have implicit feedback column.')
+
+        except IndexError:
+            raise ValueError(('Impossible to parse line.' +
+                              ' Check the line_format  and sep parameters.'))
+
+        return uid, iid, float(r) + self.offset, timestamp
 
     def parse_line(self, line):
         '''Parse a line.
@@ -82,7 +115,10 @@ class Reader():
 
         line = line.split(self.sep)
         try:
-            if self.with_timestamp:
+            if self.with_timestamp and self.with_implicit_feedback_2:
+                uid, iid, r, timestamp, implicit_feedback_2 = (line[i].strip()
+                                                               for i in self.indexes)
+            elif self.with_timestamp:
                 uid, iid, r, timestamp = (line[i].strip()
                                           for i in self.indexes)
             else:

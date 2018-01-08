@@ -13,6 +13,232 @@ from six.moves import range
 from .algo_base import AlgoBase
 from .predictions import PredictionImpossible
 
+class SVDppMultipleImplicitFeedback(AlgoBase):
+    """The *SVD++* algorithm, an extension of :class:`SVD` taking into account
+    implicit ratings.
+
+    The prediction :math:`\\hat{r}_{ui}` is set as:
+
+    .. math::
+        \hat{r}_{ui} = \mu + b_u + b_i + q_i^T\\left(p_u +
+        |I_u|^{-\\frac{1}{2}} \sum_{j \\in I_u}y_j\\right)
+
+    Where the :math:`y_j` terms are a new set of item factors that capture
+    implicit ratings. Here, an implicit rating describes the fact that a user
+    :math:`u` rated an item :math:`j`, regardless of the rating value.
+
+    If user :math:`u` is unknown, then the bias :math:`b_u` and the factors
+    :math:`p_u` are assumed to be zero. The same applies for item :math:`i`
+    with :math:`b_i`, :math:`q_i` and :math:`y_i`.
+
+
+    For details, see section 4 of :cite:`Koren:2008:FMN`. See also
+    :cite:`Ricci:2010`, section 5.3.1.
+
+    Just as for :class:`SVD`, the parameters are learned using a SGD on the
+    regularized squared error objective.
+
+    Baselines are initialized to ``0``. User and item factors are randomly
+    initialized according to a normal distribution, which can be tuned using
+    the ``init_mean`` and ``init_std_dev`` parameters.
+
+    You have control over the learning rate :math:`\gamma` and the
+    regularization term :math:`\lambda`. Both can be different for each
+    kind of parameter (see below). By default, learning rates are set to
+    ``0.005`` and regularization terms are set to ``0.02``.
+
+    Args:
+        n_factors: The number of factors. Default is ``20``.
+        n_epochs: The number of iteration of the SGD procedure. Default is
+            ``20``.
+        init_mean: The mean of the normal distribution for factor vectors
+            initialization. Default is ``0``.
+        init_std_dev: The standard deviation of the normal distribution for
+            factor vectors initialization. Default is ``0.1``.
+        lr_all: The learning rate for all parameters. Default is ``0.007``.
+        reg_all: The regularization term for all parameters. Default is
+            ``0.02``.
+        lr_bu: The learning rate for :math:`b_u`. Takes precedence over
+            ``lr_all`` if set. Default is ``None``.
+        lr_bi: The learning rate for :math:`b_i`. Takes precedence over
+            ``lr_all`` if set. Default is ``None``.
+        lr_pu: The learning rate for :math:`p_u`. Takes precedence over
+            ``lr_all`` if set. Default is ``None``.
+        lr_qi: The learning rate for :math:`q_i`. Takes precedence over
+            ``lr_all`` if set. Default is ``None``.
+        lr_yj: The learning rate for :math:`y_j`. Takes precedence over
+            ``lr_all`` if set. Default is ``None``.
+        reg_bu: The regularization term for :math:`b_u`. Takes precedence
+            over ``reg_all`` if set. Default is ``None``.
+        reg_bi: The regularization term for :math:`b_i`. Takes precedence
+            over ``reg_all`` if set. Default is ``None``.
+        reg_pu: The regularization term for :math:`p_u`. Takes precedence
+            over ``reg_all`` if set. Default is ``None``.
+        reg_qi: The regularization term for :math:`q_i`. Takes precedence
+            over ``reg_all`` if set. Default is ``None``.
+        reg_yj: The regularization term for :math:`y_j`. Takes precedence
+            over ``reg_all`` if set. Default is ``None``.
+        verbose: If ``True``, prints the current epoch. Default is ``False``.
+    """
+
+    def __init__(self, n_factors=20, n_epochs=20, init_mean=0, init_std_dev=.1,
+                 lr_all=.007, reg_all=.02, lr_bu=None, lr_bi=None, lr_pu=None,
+                 lr_qi=None, lr_yj=None, reg_bu=None, reg_bi=None, reg_pu=None,
+                 reg_qi=None, reg_yj=None, verbose=False):
+
+        self.n_factors = n_factors
+        self.n_epochs = n_epochs
+        self.init_mean = init_mean
+        self.init_std_dev = init_std_dev
+        self.lr_bu = lr_bu if lr_bu is not None else lr_all
+        self.lr_bi = lr_bi if lr_bi is not None else lr_all
+        self.lr_pu = lr_pu if lr_pu is not None else lr_all
+        self.lr_qi = lr_qi if lr_qi is not None else lr_all
+        self.lr_yj = lr_yj if lr_yj is not None else lr_all
+        self.reg_bu = reg_bu if reg_bu is not None else reg_all
+        self.reg_bi = reg_bi if reg_bi is not None else reg_all
+        self.reg_pu = reg_pu if reg_pu is not None else reg_all
+        self.reg_qi = reg_qi if reg_qi is not None else reg_all
+        self.reg_yj = reg_yj if reg_yj is not None else reg_all
+        self.verbose = verbose
+
+        AlgoBase.__init__(self)
+
+    def fit(self, trainset):
+        AlgoBase.fit(self, trainset)
+        self.sgd(trainset)
+
+    def sgd(self, trainset):
+
+        # user biases
+        cdef np.ndarray[np.double_t] bu
+        # item biases
+        cdef np.ndarray[np.double_t] bi
+        # user factors
+        cdef np.ndarray[np.double_t, ndim=2] pu
+        # item factors
+        cdef np.ndarray[np.double_t, ndim=2] qi
+        # item implicit factors
+        cdef np.ndarray[np.double_t, ndim=2] yj
+        # item implicit factors 2
+        cdef np.ndarray[np.double_t, ndim=2] zj
+
+        cdef int u, i, j, f
+        cdef double r, err, dot, puf, qif, sqrt_Iu, sqrt_Zu, _
+        cdef double global_mean = self.trainset.global_mean
+        cdef np.ndarray[np.double_t] u_impl_fdb
+
+        cdef double lr_bu = self.lr_bu
+        cdef double lr_bi = self.lr_bi
+        cdef double lr_pu = self.lr_pu
+        cdef double lr_qi = self.lr_qi
+        cdef double lr_yj = self.lr_yj
+
+        cdef double reg_bu = self.reg_bu
+        cdef double reg_bi = self.reg_bi
+        cdef double reg_pu = self.reg_pu
+        cdef double reg_qi = self.reg_qi
+        cdef double reg_yj = self.reg_yj
+
+        # bias of the user
+        bu = np.zeros(trainset.n_users, np.double)
+        #bias of the item
+        bi = np.zeros(trainset.n_items, np.double)
+
+        # user factors
+        pu = np.random.normal(self.init_mean, self.init_std_dev,
+                              (trainset.n_users, self.n_factors))
+        # item factors
+        qi = np.random.normal(self.init_mean, self.init_std_dev,
+                              (trainset.n_items, self.n_factors))
+        # item implicit factors
+        yj = np.random.normal(self.init_mean, self.init_std_dev,
+                              (trainset.n_items, self.n_factors))
+        # item implicit factors 2
+        zj = np.random.normal(self.init_mean, self.init_std_dev,
+                              (trainset.n_items, self.n_factors))
+        # user implicit feedback
+        u_impl_fdb = np.zeros(self.n_factors, np.double)
+
+        #tap implicit feedback
+        tap_impl_fdb = np.zeros(self.n_factors, np.double)
+
+        # implicit_rating_matrix = trainset.implicit_ratings()
+
+        for current_epoch in range(self.n_epochs):
+            if self.verbose:
+                print(" processing epoch {}".format(current_epoch))
+
+            # u is for user
+            # i is for item
+            # r is for rating
+            for u, i, r in trainset.all_ratings():
+
+                # items rated by u. This is COSTLY
+                Iu = [j for (j, _) in trainset.ur[u]]
+                sqrt_Iu = np.sqrt(len(Iu)) if len(Iu) > 0 else 1
+                Zu = [j for (j, _) in trainset.mr[u]]
+                sqrt_Zu = np.sqrt(len(Zu)) if len(Zu) > 0 else 1
+                # print(" value of Iu {}".format(sqrt_Iu)) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
+                # print(" value of Zu {}".format(sqrt_Zu))
+
+                # compute user implicit feedback
+                u_impl_fdb = np.zeros(self.n_factors, np.double)
+                tap_impl_fdb = np.zeros(self.n_factors, np.double)
+                for j in Iu:
+                    for f in range(self.n_factors):
+                        # implicit_feedback_tap = (zj[j, f])/(sqrt_Zu) \
+                        #     if (u,i) in implicit_rating_matrix \
+                        #     else 0
+                        u_impl_fdb[f] += yj[j, f] / sqrt_Iu
+                        tap_impl_fdb[f] += zj[j,f] / sqrt_Zu
+
+
+                        # compute current error
+                dot = 0 # <q_i, (p_u + sum_{j in Iu} y_j / sqrt{Iu}>
+                for f in range(self.n_factors):
+                    dot += qi[i, f] * (pu[u, f] + u_impl_fdb[f]) #+ qi[i, f] * (tap_impl_fdb[f])
+
+                err = r - (global_mean + bu[u] + bi[i] + dot)
+
+                # update biases
+                bu[u] += lr_bu * (err - reg_bu * bu[u])
+                bi[i] += lr_bi * (err - reg_bi * bi[i])
+
+                # update factors
+                for f in range(self.n_factors):
+                    puf = pu[u, f]
+                    qif = qi[i, f]
+                    pu[u, f] += lr_pu * (err * qif - reg_pu * puf)
+                    qi[i, f] += lr_qi * (err * (puf + u_impl_fdb[f]) -
+                                         reg_qi * qif)
+                    for j in Iu:
+                        yj[j, f] += lr_yj * (err * qif / sqrt_Iu -
+                                             reg_yj * yj[j, f])
+
+        self.bu = bu
+        self.bi = bi
+        self.pu = pu
+        self.qi = qi
+        self.yj = yj
+
+    def estimate(self, u, i):
+
+        est = self.trainset.global_mean
+
+        if self.trainset.knows_user(u):
+            est += self.bu[u]
+
+        if self.trainset.knows_item(i):
+            est += self.bi[i]
+
+        if self.trainset.knows_user(u) and self.trainset.knows_item(i):
+            Iu = len(self.trainset.ur[u])  # nb of items rated by u
+            u_impl_feedback = (sum(self.yj[j] for (j, _)
+                                   in self.trainset.ur[u]) / np.sqrt(Iu))
+            est += np.dot(self.qi[i], self.pu[u] + u_impl_feedback)
+
+        return est
 
 class SVD(AlgoBase):
     """The famous *SVD* algorithm, as popularized by `Simon Funk
@@ -20,61 +246,44 @@ class SVD(AlgoBase):
     Prize. When baselines are not used, this is equivalent to Probabilistic
     Matrix Factorization :cite:`salakhutdinov2008a` (see :ref:`note
     <unbiased_note>` below).
-
     The prediction :math:`\\hat{r}_{ui}` is set as:
-
     .. math::
         \hat{r}_{ui} = \mu + b_u + b_i + q_i^Tp_u
-
     If user :math:`u` is unknown, then the bias :math:`b_u` and the factors
     :math:`p_u` are assumed to be zero. The same applies for item :math:`i`
     with :math:`b_i` and :math:`q_i`.
-
     For details, see equation (5) from :cite:`Koren:2009`. See also
     :cite:`Ricci:2010`, section 5.3.1.
-
     To estimate all the unknown, we minimize the following regularized squared
     error:
-
     .. math::
         \sum_{r_{ui} \in R_{train}} \left(r_{ui} - \hat{r}_{ui} \\right)^2 +
         \lambda\\left(b_i^2 + b_u^2 + ||q_i||^2 + ||p_u||^2\\right)
-
-
     The minimization is performed by a very straightforward stochastic gradient
     descent:
-
     .. math::
         b_u &\\leftarrow b_u &+ \gamma (e_{ui} - \lambda b_u)\\\\
         b_i &\\leftarrow b_i &+ \gamma (e_{ui} - \lambda b_i)\\\\
         p_u &\\leftarrow p_u &+ \gamma (e_{ui} \\cdot q_i - \lambda p_u)\\\\
         q_i &\\leftarrow q_i &+ \gamma (e_{ui} \\cdot p_u - \lambda q_i)
-
     where :math:`e_{ui} = r_{ui} - \\hat{r}_{ui}`. These steps are performed
     over all the ratings of the trainset and repeated ``n_epochs`` times.
     Baselines are initialized to ``0``. User and item factors are randomly
     initialized according to a normal distribution, which can be tuned using
     the ``init_mean`` and ``init_std_dev`` parameters.
-
     You also have control over the learning rate :math:`\gamma` and the
     regularization term :math:`\lambda`. Both can be different for each
     kind of parameter (see below). By default, learning rates are set to
     ``0.005`` and regularization terms are set to ``0.02``.
-
     .. _unbiased_note:
-
     .. note::
         You can choose to use an unbiased version of this algorithm, simply
         predicting:
-
         .. math::
             \hat{r}_{ui} = q_i^Tp_u
-
         This is equivalent to Probabilistic Matrix Factorization
         (:cite:`salakhutdinov2008a`, section 2) and can be achieved by setting
         the ``biased`` parameter to ``False``.
-
-
     Args:
         n_factors: The number of factors. Default is ``100``.
         n_epochs: The number of iteration of the SGD procedure. Default is
