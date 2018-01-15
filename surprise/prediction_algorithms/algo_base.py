@@ -186,7 +186,7 @@ class AlgoBase(object):
                                     iid,
                                     r_ui_trans - self.trainset.offset,
                                     verbose=verbose)
-                       for (uid, iid, r_ui_trans) in testset]
+                       for (uid, iid, r_ui_trans, r_implicit_trans) in testset]
         return predictions
 
     def compute_baselines(self):

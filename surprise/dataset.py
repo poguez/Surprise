@@ -222,7 +222,7 @@ class Dataset:
         mr = defaultdict(list)
 
         # user raw id, item raw id, translated rating, time stamp
-        for urid, irid, r, timestamp in raw_trainset:
+        for urid, irid, r, timestamp, implicit_rating_2 in raw_trainset:
             try:
                 uid = raw2inner_id_users[urid]
             except KeyError:
@@ -238,6 +238,7 @@ class Dataset:
 
             ur[uid].append((iid, r))
             ir[iid].append((uid, r))
+            mr[iid].append((uid, float(implicit_rating_2)))
 
         n_users = len(ur)  # number of users
         n_items = len(ir)  # number of items
@@ -258,8 +259,8 @@ class Dataset:
 
     def construct_testset(self, raw_testset):
 
-        return [(ruid, riid, r_ui_trans)
-                for (ruid, riid, r_ui_trans, _) in raw_testset]
+        return [(ruid, riid, r_ui_trans, r_implicit_trans)
+                for (ruid, riid, r_ui_trans, r_implicit_trans, _) in raw_testset]
 
 
 class DatasetUserFolds(Dataset):

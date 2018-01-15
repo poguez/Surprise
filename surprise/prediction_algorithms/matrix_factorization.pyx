@@ -126,7 +126,7 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
         cdef int u, i, j, f
         cdef double r, err, dot, puf, qif, sqrt_Iu, sqrt_Zu, _
         cdef double global_mean = self.trainset.global_mean
-        cdef np.ndarray[np.double_t] u_impl_fdb
+        cdef np.ndarray[np.double_t] u_impl_fdb, tap_impl_fdb
 
         cdef double lr_bu = self.lr_bu
         cdef double lr_bi = self.lr_bi
@@ -192,12 +192,15 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                         #     else 0
                         u_impl_fdb[f] += yj[j, f] / sqrt_Iu
                         tap_impl_fdb[f] += zj[j,f] / sqrt_Zu
+                        # print(" value of IMP_FD {}".format(u_impl_fdb[f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
+                        # print(" value of YJ {}".format(yj[j, f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
+
 
 
                         # compute current error
                 dot = 0 # <q_i, (p_u + sum_{j in Iu} y_j / sqrt{Iu}>
                 for f in range(self.n_factors):
-                    dot += qi[i, f] * (pu[u, f] + u_impl_fdb[f]) #+ qi[i, f] * (tap_impl_fdb[f])
+                    dot += qi[i, f] * (pu[u, f] + u_impl_fdb[f] + tap_impl_fdb[f]) #+ qi[i, f] * (tap_impl_fdb[f])
 
                 err = r - (global_mean + bu[u] + bi[i] + dot)
 
@@ -210,7 +213,7 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                     puf = pu[u, f]
                     qif = qi[i, f]
                     pu[u, f] += lr_pu * (err * qif - reg_pu * puf)
-                    qi[i, f] += lr_qi * (err * (puf + u_impl_fdb[f]) -
+                    qi[i, f] += lr_qi * (err * (puf + u_impl_fdb[f]) + tap_impl_fdb[f] -
                                          reg_qi * qif)
                     for j in Iu:
                         yj[j, f] += lr_yj * (err * qif / sqrt_Iu -

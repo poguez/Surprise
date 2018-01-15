@@ -98,7 +98,7 @@ class Reader():
             raise ValueError(('Impossible to parse line.' +
                               ' Check the line_format  and sep parameters.'))
 
-        return uid, iid, float(r) + self.offset, timestamp
+        return uid, iid, float(r) + self.offset, timestamp, implicit_feedback_2
 
     def parse_line(self, line):
         '''Parse a line.
