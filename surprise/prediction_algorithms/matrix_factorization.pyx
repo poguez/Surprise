@@ -84,7 +84,7 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
     def __init__(self, n_factors=20, n_epochs=20, init_mean=0, init_std_dev=.1,
                  lr_all=.007, reg_all=.02, lr_bu=None, lr_bi=None, lr_pu=None,
                  lr_qi=None, lr_yj=None, reg_bu=None, reg_bi=None, reg_pu=None,
-                 reg_qi=None, reg_yj=None, verbose=False):
+                 reg_qi=None, reg_yj=None, verbose=False, lr_zj=None, reg_zj=None):
 
         self.n_factors = n_factors
         self.n_epochs = n_epochs
@@ -95,11 +95,13 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
         self.lr_pu = lr_pu if lr_pu is not None else lr_all
         self.lr_qi = lr_qi if lr_qi is not None else lr_all
         self.lr_yj = lr_yj if lr_yj is not None else lr_all
+        self.lr_zj = lr_zj if lr_zj is not None else lr_all
         self.reg_bu = reg_bu if reg_bu is not None else reg_all
         self.reg_bi = reg_bi if reg_bi is not None else reg_all
         self.reg_pu = reg_pu if reg_pu is not None else reg_all
         self.reg_qi = reg_qi if reg_qi is not None else reg_all
         self.reg_yj = reg_yj if reg_yj is not None else reg_all
+        self.reg_zj = reg_zj if reg_zj is not None else reg_all
         self.verbose = verbose
 
         AlgoBase.__init__(self)
@@ -133,12 +135,14 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
         cdef double lr_pu = self.lr_pu
         cdef double lr_qi = self.lr_qi
         cdef double lr_yj = self.lr_yj
+        cdef double lr_zj = self.lr_zj
 
         cdef double reg_bu = self.reg_bu
         cdef double reg_bi = self.reg_bi
         cdef double reg_pu = self.reg_pu
         cdef double reg_qi = self.reg_qi
         cdef double reg_yj = self.reg_yj
+        cdef double reg_zj = self.reg_zj
 
         # bias of the user
         bu = np.zeros(trainset.n_users, np.double)
@@ -163,8 +167,6 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
         #tap implicit feedback
         tap_impl_fdb = np.zeros(self.n_factors, np.double)
 
-        # implicit_rating_matrix = trainset.implicit_ratings()
-
         for current_epoch in range(self.n_epochs):
             if self.verbose:
                 print(" processing epoch {}".format(current_epoch))
@@ -176,7 +178,7 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
 
                 # items rated by u. This is COSTLY
                 Iu = [j for (j, _) in trainset.ur[u]]
-                sqrt_Iu = np.sqrt(len(Iu)) if len(Iu) > 0 else 1
+                sqrt_Iu = np.sqrt(len(Iu))
                 Zu = [j for (j, _) in trainset.mr[u]]
                 sqrt_Zu = np.sqrt(len(Zu)) if len(Zu) > 0 else 1
                 # print(" value of Iu {}".format(sqrt_Iu)) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
@@ -192,8 +194,8 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                         #     else 0
                         u_impl_fdb[f] += yj[j, f] / sqrt_Iu
                         tap_impl_fdb[f] += zj[j,f] / sqrt_Zu
-                        # print(" value of IMP_FD {}".format(u_impl_fdb[f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
-                        # print(" value of YJ {}".format(yj[j, f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
+                        #print(" value of IMP_FD {}".format(u_impl_fdb[f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
+                        #print(" value of YJ {}".format(tap_impl_fdb[f])) # sqrt_Zu = sqrt_Zu if sqrt_Zu > 0 else 1
 
 
 
@@ -218,12 +220,15 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                     for j in Iu:
                         yj[j, f] += lr_yj * (err * qif / sqrt_Iu -
                                              reg_yj * yj[j, f])
+                        zj[j, f] += lr_zj * (err * qif / sqrt_Zu -
+                                             reg_zj * zj[j, f])
 
         self.bu = bu
         self.bi = bi
         self.pu = pu
         self.qi = qi
         self.yj = yj
+        self.zj = zj
 
     def estimate(self, u, i):
 
@@ -237,9 +242,12 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
 
         if self.trainset.knows_user(u) and self.trainset.knows_item(i):
             Iu = len(self.trainset.ur[u])  # nb of items rated by u
+            Zu = len(self.trainset.mr[u])  if len(self.trainset.mr[u]) > 0 else 1 # nb of items rated by u
             u_impl_feedback = (sum(self.yj[j] for (j, _)
                                    in self.trainset.ur[u]) / np.sqrt(Iu))
-            est += np.dot(self.qi[i], self.pu[u] + u_impl_feedback)
+            tap_impl_feedback = (sum(self.zj[j] for (j, _)
+                                   in self.trainset.mr[u]) / np.sqrt(Zu))
+            est += np.dot(self.qi[i], self.pu[u] + u_impl_feedback + tap_impl_feedback)
 
         return est
 

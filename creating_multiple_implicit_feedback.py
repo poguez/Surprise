@@ -18,7 +18,7 @@ binarized_columns = [
 for column in binarized_columns:
 
     # Dataset load file
-    file_path ='/Users/poguez/Desktop/ifttt-recipes/data/'+str(column)+'/ifttt_dataset_for_recommendation_composed_ints.csv'
+    file_path ='../ifttt-recipes/data/'+str(column)+'/ifttt_dataset_for_recommendation_composed_ints.csv'
     reader = Reader(line_format="user item rating timestamp implicit_feedback_2", sep='\t', skip_lines=0)
     data_ifttt_dataset_for_recommendation_composed = Dataset.load_from_file(file_path, reader=reader)
     data_ifttt_dataset_for_recommendation_composed.split(n_folds=10)
