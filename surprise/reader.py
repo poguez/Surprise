@@ -92,7 +92,7 @@ class Reader():
                 uid, iid, r, timestamp, implicit_feedback_2 = (line[i].strip()
                                                                for i in self.indexes)
             else:
-                raise ValueError('It does not have implicit feedback column.')
+                raise ValueError('It does not have implicit_feedback_2 column.')
 
         except IndexError:
             raise ValueError(('Impossible to parse line.' +

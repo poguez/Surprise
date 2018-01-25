@@ -39,14 +39,15 @@ class Trainset:
     """
 
     def __init__(self, ur, ir, n_users, n_items, n_ratings, rating_scale,
-                 offset, raw2inner_id_users, raw2inner_id_items, mr = None):
+                 offset, raw2inner_id_users, raw2inner_id_items, tapr = None, n_tap_items=None):
 
         self.ur = ur
         self.ir = ir
-        self.mr = mr
+        self.tapr = tapr
         self.n_users = n_users
         self.n_items = n_items
         self.n_ratings = n_ratings
+        self.n_tap_items = n_tap_items
         self.rating_scale = rating_scale
         self.offset = offset
         self._raw2inner_id_users = raw2inner_id_users
@@ -84,6 +85,20 @@ class Trainset:
         """
 
         return iid in self.ir
+
+    def knows_implicit_item(self, iid):
+        """Indicate if the item is part of the trainset.
+
+        An item is part of the trainset if the item was rated at least once.
+
+        Args:
+            iid(int): The (inner) item id. See :ref:`this
+                note<raw_inner_note>`.
+        Returns:
+            ``True`` if item is part of the trainset, else ``False``.
+        """
+
+        return iid in self.tapr
 
     def to_inner_uid(self, ruid):
         """Convert a **user** raw id to an inner id.
@@ -246,6 +261,14 @@ class Trainset:
             Inner id of items.
         """
         return range(self.n_items)
+
+    def all_implicit_items(self):
+        """Generator function to iterate over all implicit items.
+
+        Yields:
+            Inner id of items.
+        """
+        return range(self.n_tap_items)
 
     @property
     def global_mean(self):

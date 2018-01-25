@@ -219,7 +219,7 @@ class Dataset:
 
         ur = defaultdict(list)
         ir = defaultdict(list)
-        mr = defaultdict(list)
+        tapr = defaultdict(list)
 
         # user raw id, item raw id, translated rating, time stamp
         for urid, irid, r, timestamp, implicit_rating_2 in raw_trainset:
@@ -238,11 +238,13 @@ class Dataset:
 
             ur[uid].append((iid, r))
             ir[iid].append((uid, r))
-            mr[iid].append((uid, float(implicit_rating_2)))
+            tapr[iid].append((uid, r if implicit_rating_2 != 0 else 0))
 
         n_users = len(ur)  # number of users
         n_items = len(ir)  # number of items
+        n_tap_items = len(ur)  # number of items
         n_ratings = len(raw_trainset)
+        print("n_users {}, n_items {}. n_tap_items {}, n_ratings {}".format(n_users, n_items, n_tap_items, n_ratings))
 
         trainset = Trainset(ur,
                             ir,
@@ -253,7 +255,8 @@ class Dataset:
                             self.reader.offset,
                             raw2inner_id_users,
                             raw2inner_id_items,
-                            mr)
+                            tapr,
+                            n_tap_items)
 
         return trainset
 
