@@ -238,11 +238,11 @@ class Dataset:
 
             ur[uid].append((iid, r))
             ir[iid].append((uid, r))
-            tapr[iid].append((uid, r if implicit_rating_2 != 0 else 0))
+            tapr[uid].append((iid, r if implicit_rating_2 != 0 else 0))
 
         n_users = len(ur)  # number of users
         n_items = len(ir)  # number of items
-        n_tap_items = len(ur)  # number of items
+        n_tap_items = len(ir)  # number of items
         n_ratings = len(raw_trainset)
         print("n_users {}, n_items {}. n_tap_items {}, n_ratings {}".format(n_users, n_items, n_tap_items, n_ratings))
 

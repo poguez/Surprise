@@ -188,10 +188,10 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                 # compute user implicit feedback
                 u_impl_fdb = np.zeros(self.n_factors, np.double)
                 tap_impl_fdb = np.zeros(self.n_factors, np.double)
-                for j in Iu:
-                    for f in range(self.n_factors):
-                        # print(" value of yj.length {}, j {}, n_items{}, n_factors{} ".format(len(yj), j, trainset.n_items, self.n_factors))
-                        u_impl_fdb[f] += yj[j, f] / sqrt_Iu
+                #for j in Iu:
+                #    for f in range(self.n_factors):
+                #        # print(" value of yj.length {}, j {}, n_items{}, n_factors{} ".format(len(yj), j, trainset.n_items, self.n_factors))
+                #        u_impl_fdb[f] += yj[j, f] / sqrt_Iu
 
                 for k in Zu:
                     for f in range(self.n_factors):
@@ -216,7 +216,8 @@ class SVDppMultipleImplicitFeedback(AlgoBase):
                     pu[u, f] += lr_pu * (err * qif - reg_pu * puf)
                     qi[i, f] += lr_qi * (err * (puf + tap_impl_fdb[f])  -
                                          reg_qi * qif)
-                    for j in Iu:
+                    #for j in Iu:
+                    for j in Zu:
                         # yj[j, f] += lr_yj * (err * qif / sqrt_Iu -
                         #                      reg_yj * yj[j, f])
                         zj[j, f] += lr_zj * (err * qif / sqrt_Zu -
